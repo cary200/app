@@ -1,5 +1,7 @@
 # 清屏 · Android 个人测试版
 
+安装包已通过 GitHub Actions 编译、lint 检查及 API 30 模拟器跨应用测试。[直接下载 QingPing.apk](https://github.com/cary200/app/releases/download/qingping-test-2/QingPing.apk)。手机打开 APK 即可安装。该包为调试签名个人测试版，后续不同构建可能需要卸载旧版后安装，卸载会删除本机统计。
+
 清屏利用 Android 无障碍服务处理用户勾选的应用。首页提供连接状态、暂停开关、应用选择、入口防误触开关和统计。最低 Android 8.0（API 26），目标 API 35。工程含完整 Java 源码、一个独立的测试 App 和生成调试 APK 的工作流。
 
 ## 安装前，了解授权与边界
@@ -27,7 +29,7 @@
 
 本机构建命令为 `bash gradlew :app:assembleDebug :fixture:assembleDebug`，同样需要 JDK 和 Android SDK。若依赖下载失败，检查网络是否可以访问 GitHub、Gradle、Google Maven 和 Maven Central。
 
-无需在电脑安装 Android SDK 的做法：把 QingPing **目录内**的文件（含 .github）放在自己的 GitHub 仓库根目录，启用 Actions。在 “Build QingPing APK” 中选择 “Run workflow”。APK 构建与 lint 完成后，从运行页面的 Artifacts 下载并解压 QingPing-debug。测试场安装包单独发布。随后该工作流会在临时 API 30 模拟器运行跨应用检查。请查看模拟器步骤是否通过。这里提供了工作流定义，交付时尚未远程执行。
+无需在电脑安装 Android SDK 的做法：把 QingPing **目录内**的文件（含 .github）放在自己的 GitHub 仓库根目录，启用 Actions。在 “Build QingPing APK” 中选择 “Run workflow”。APK 构建与 lint 完成后，从运行页面的 Artifacts 下载并解压 QingPing-debug。测试场安装包单独发布。随后该工作流会在临时 API 30 模拟器运行跨应用检查。请查看模拟器步骤是否通过。本工程已成功执行此流程。[构建记录](https://github.com/cary200/app/actions/runs/42141368788)。
 
 ## 手机上怎么用
 
@@ -64,7 +66,7 @@
 | 划掉清屏 / 重启后解锁 | 不先打开清屏，直接启动选中的测试场，观察结果，再打开清屏核对次数与连接状态 |
 | 系统强行停止清屏 | 手动重新打开清屏并检查无障碍开关，然后再次验证 |
 
-自动化入口是 checks/emulator.py，仅适用于可丢弃的干净模拟器。它通过 adb 为该测试环境预置同意与选中状态，正式应用没有相应的外部开关。交付前已在 JVM 运行 36 项匹配和计数断言，并检查 Java、XML、脚本与打包结构。由于当前环境缺少 SDK、adb 和模拟器，尚未在这里构建 APK 或完成设备端验收。
+自动化入口是 checks/emulator.py，仅适用于可丢弃的干净模拟器。它通过 adb 为该测试环境预置同意与选中状态，正式应用没有相应的外部开关。已运行 36 项匹配和计数断言，通过 APK 编译及 lint，并在 GitHub Actions 的 API 30 模拟器上完成跨应用测试，包括开屏跳过、广告外跳取消、正常链接与引导页保留、无效点击不计数、触摸拦截和长按放行。真实机型的开机恢复、厂商后台清理和第三方 App 规则覆盖仍待实测。
 
 ## 平台资料
 
