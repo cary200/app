@@ -17,6 +17,11 @@ public final class Fixture extends Activity {
         if (mode == null) mode = getPreferences(0).getString("next","skip");
         show(mode);
     }
+    @Override protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent); setIntent(intent);
+        String mode = intent.getStringExtra("mode");
+        show(mode == null ? "skip" : mode);
+    }
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
     private void label(String s) { TextView t = new TextView(this); t.setText(s); t.setTextSize(20); box.addView(t); }
     private void button(String s, Runnable r) {
