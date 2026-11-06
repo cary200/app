@@ -77,7 +77,7 @@ final class Scene implements AutoCloseable {
         } finally { if (button != null) button.recycle(); }
     }
     private boolean compact(Rect b) {
-        return b.width() <= window.width() * .48 && b.height() <= window.height() * .15;
+        return b.width() <= window.width() * .60 && b.height() <= window.height() * .15;
     }
     private AccessibilityNodeInfo clickable(AccessibilityNodeInfo labelNode, Rect label) {
         AccessibilityNodeInfo n = AccessibilityNodeInfo.obtain(labelNode);

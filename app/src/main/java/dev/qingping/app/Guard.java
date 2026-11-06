@@ -105,7 +105,7 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
         boolean overlayActive = shield != null && getPackageName().contentEquals(
                 root.getPackageName() == null ? "" : root.getPackageName());
         root.recycle();
-        if (!overlayActive) return null;
+        if (!overlayActive) { reset(); return null; }
         // On some builds a touched accessibility overlay becomes the active window.
         // Inspect only the previously verified application window if it still holds input focus.
         List<AccessibilityWindowInfo> windows = getWindows();

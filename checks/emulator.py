@@ -112,6 +112,12 @@ def main():
             assert result() == "等待操作", f"must preserve {mode}"
             assert count("skip") == expected_skip, f"must not count {mode}"
         print("Cross-package fixture checks passed, including corner/deep/touch-only/ignored/delayed/negative cases")
+    except Exception:
+        print("QingPing diagnostic preferences", prefs(APP, "qingping"), flush=True)
+        print(adb("logcat", "-b", "crash", "-d", "-t", "80", check=False), flush=True)
+        shell("uiautomator", "dump", "/sdcard/qingping-failure.xml")
+        print(adb("exec-out", "cat", "/sdcard/qingping-failure.xml", check=False), flush=True)
+        raise
     finally:
         shell("settings", "delete", "secure", "enabled_accessibility_services")
         if enabled == "null":
