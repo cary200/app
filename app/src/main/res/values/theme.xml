@@ -1,0 +1,8 @@
+<resources>
+    <string name="service_info">在你选中的应用内识别广告按钮，跳过开屏广告，遮挡明确的广告跳转入口或取消广告外跳询问。仅在本机记录各应用的处理次数。</string>
+    <style name="QingTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#006855</item>
+        <item name="android:windowLightStatusBar">true</item><item name="android:statusBarColor">#F3F6F3</item>
+        <item name="android:navigationBarColor">#17352F</item><item name="android:windowBackground">#F3F6F3</item>
+    </style>
+</resources>
