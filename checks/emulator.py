@@ -98,11 +98,11 @@ def main():
             expected_skip += 1
             until(lambda: count("skip"), expected_skip, f"{mode} counted once")
         # Return through QingPing, then re-enter the same selected app after its launch deadline.
-        launch("normal")
+        launch("reentry")
         time.sleep(15.3)
         shell("am", "start", "-W", "-n", f"{APP}/.Home")
         time.sleep(.5)
-        shell("am", "start", "-W", "-n", f"{FIX}/.Fixture", "--es", "mode", "corner")
+        shell("am", "start", "-W", "-n", f"{FIX}/.Fixture")
         until(result, "已进入首页", "return through QingPing rearms detection")
         expected_skip += 1
         until(lambda: count("skip"), expected_skip, "reentry counted")

@@ -9,6 +9,7 @@ import android.widget.*;
 
 public final class Fixture extends Activity {
     private LinearLayout box;
+    private boolean resumed;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL);
@@ -16,6 +17,13 @@ public final class Fixture extends Activity {
         String mode = getIntent().getStringExtra("mode");
         if (mode == null) mode = getPreferences(0).getString("next","skip");
         show(mode);
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        if (resumed && "reentry".equals(getIntent().getStringExtra("mode"))) {
+            status("等待操作"); corner("corner");
+        }
+        resumed = true;
     }
     @Override protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent); setIntent(intent);
@@ -95,6 +103,7 @@ public final class Fixture extends Activity {
             case "cancel": label("是否打开广告链接？"); button("取消",() -> end("已留在原应用"));
                 button("打开",() -> end("已主动打开")); break;
             case "link": label("广告"); button("点击查看详情",() -> end("已进入详情")); break;
+            case "reentry":
             case "normal": label("是否打开第三方应用？"); button("取消",() -> end("取消正常链接")); break;
             case "guide": label("欢迎使用"); button("跳过",() -> end("跳过了引导")); break;
             case "stuck": label("广告"); button("跳过广告",() -> status("按钮有响应但广告仍在")); break;
