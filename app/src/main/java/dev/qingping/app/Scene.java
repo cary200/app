@@ -5,21 +5,23 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 
-/** A transient snapshot of one active window. Never persists text or coordinates. */
+/** One active window, held only for the current inspection. */
 final class Scene implements AutoCloseable {
-    boolean marked, question, explicitQuestion, complete = true, populated;
+    boolean marked, question, explicitQuestion, sensitive, complete = true, truncated, populated;
+    int visited;
     final Rect window = new Rect();
     private final ArrayList<AccessibilityNodeInfo> adParents = new ArrayList<>();
     private final ArrayList<AccessibilityNodeInfo> questionParents = new ArrayList<>();
-    boolean explicitSkip;
     final Choice skip = new Choice(), cancel = new Choice(), link = new Choice();
 
     static final class Choice {
         AccessibilityNodeInfo node;
-        boolean ambiguous;
-        void add(AccessibilityNodeInfo next) {
-            if (node == null) node = AccessibilityNodeInfo.obtain(next);
-            else if (!node.equals(next)) ambiguous = true;
+        final Rect label = new Rect();
+        boolean ambiguous, explicit;
+        void add(AccessibilityNodeInfo next, Rect bounds, boolean evidence) {
+            if (node == null) {
+                node = AccessibilityNodeInfo.obtain(next); label.set(bounds); explicit = evidence;
+            } else if (!node.equals(next) && !label.equals(bounds)) ambiguous = true;
         }
         boolean ready() { return node != null && !ambiguous; }
         void release() { if (node != null) node.recycle(); }
@@ -29,26 +31,27 @@ final class Scene implements AutoCloseable {
         root.getBoundsInScreen(window);
         ArrayDeque<AccessibilityNodeInfo> work = new ArrayDeque<>();
         work.add(AccessibilityNodeInfo.obtain(root));
-        int visits = 0;
         try {
-            while (!work.isEmpty() && visits++ < 220) {
+            while (!work.isEmpty() && visited++ < 800) {
                 AccessibilityNodeInfo n = work.removeFirst();
                 try {
-                    if (!n.isVisibleToUser() || n.isPassword()) continue;
-                    inspect(n);
+                    if (n.isPassword()) continue;
+                    if (n.isVisibleToUser()) inspect(n);
+                    // Some containers report invisible while their descendants are visible.
                     for (int i = 0; i < n.getChildCount(); i++) {
-                        if (visits + work.size() >= 220) { complete = false; break; }
+                        if (visited + work.size() >= 800) { truncated = true; complete = false; break; }
                         AccessibilityNodeInfo child = n.getChild(i);
                         if (child != null) work.addLast(child); else complete = false;
                     }
                 } finally { n.recycle(); }
             }
-            if (!work.isEmpty()) complete = false;
+            if (!work.isEmpty()) { truncated = true; complete = false; }
         } finally { while (!work.isEmpty()) work.removeFirst().recycle(); }
     }
     private void inspect(AccessibilityNodeInfo n) {
         String text = Rules.norm(n.getText()), desc = Rules.norm(n.getContentDescription());
         populated |= !text.isEmpty() || !desc.isEmpty();
+        sensitive |= Rules.sensitive(text) || Rules.sensitive(desc);
         boolean ad = Rules.marked(text) || Rules.marked(desc);
         marked |= ad;
         if (ad) addParent(n, adParents);
@@ -60,30 +63,40 @@ final class Scene implements AutoCloseable {
         boolean s = Rules.skip(text) || Rules.skip(desc), c = Rules.cancel(text) || Rules.cancel(desc);
         boolean l = Rules.link(text) || Rules.link(desc);
         if (!s && !c && !l) return;
-        // Many real layouts put the label one level inside its clickable button.
-        // Never climb into a full-screen ad or accept a substantially larger parent.
-        AccessibilityNodeInfo button = n;
-        Rect label = new Rect(), box = new Rect();
-        n.getBoundsInScreen(label);
-        if (!n.isClickable()) button = n.getParent();
-        if (button == null) return;
+        Rect label = new Rect(); n.getBoundsInScreen(label);
+        if (label.isEmpty() || !window.contains(label) || !n.isEnabled()) return;
+        AccessibilityNodeInfo button = clickable(n, label);
         try {
-            button.getBoundsInScreen(box);
-            if (!button.isClickable() || !button.isEnabled() || !button.isVisibleToUser()
-                    || box.isEmpty() || !window.contains(box) || box.width() > window.width() * .88
-                    || box.height() > window.height() * .27) return;
-            if (button != n && (!box.contains(label) || box.width() > label.width() * 2.8
-                    || box.height() > label.height() * 2.8)) return;
-            if (s) { skip.add(button); explicitSkip |= ad; }
-            if (c) cancel.add(button);
-            if (l) link.add(button);
-        } finally { if (button != n) button.recycle(); }
+            // Retain exact skip labels for a bounded gesture fallback even if no node is clickable.
+            if (s && compact(label)) skip.add(button == null ? n : button, label,
+                    Rules.explicitSkip(text) || Rules.explicitSkip(desc));
+            if (button != null) {
+                if (c) cancel.add(button, label, false);
+                if (l) link.add(button, label, false);
+            }
+        } finally { if (button != null) button.recycle(); }
+    }
+    private boolean compact(Rect b) {
+        return b.width() <= window.width() * .48 && b.height() <= window.height() * .15;
+    }
+    private AccessibilityNodeInfo clickable(AccessibilityNodeInfo labelNode, Rect label) {
+        AccessibilityNodeInfo n = AccessibilityNodeInfo.obtain(labelNode);
+        for (int depth = 0; n != null && depth < 4; depth++) {
+            Rect box = new Rect(); n.getBoundsInScreen(box);
+            if (n.isClickable() && n.isEnabled() && n.isVisibleToUser() && window.contains(box)
+                    && box.contains(label) && box.width() <= window.width() * .88
+                    && box.height() <= window.height() * .27
+                    && (depth == 0 || box.width() <= label.width() * 3 && box.height() <= label.height() * 3))
+                return n;
+            AccessibilityNodeInfo parent = n.getParent(); n.recycle(); n = parent;
+        }
+        if (n != null) n.recycle();
+        return null;
     }
     private static void addParent(AccessibilityNodeInfo n, ArrayList<AccessibilityNodeInfo> parents) {
         AccessibilityNodeInfo p = n.getParent();
         if (p != null) parents.add(p);
     }
-    // A label in an unrelated feed card must not authorize a button elsewhere.
     private boolean nearby(Choice c, ArrayList<AccessibilityNodeInfo> parents) {
         if (!c.ready()) return false;
         AccessibilityNodeInfo parent = c.node.getParent();
@@ -98,9 +111,18 @@ final class Scene implements AutoCloseable {
             } finally { group.recycle(); }
         } finally { parent.recycle(); }
     }
-    boolean canSkip() { return skip.ready() && (explicitSkip || nearby(skip, adParents)); }
-    boolean canShield() { return nearby(link, adParents); }
-    boolean canCancel() { return explicitQuestion && nearby(cancel, questionParents); }
+    boolean cornerSkip() {
+        Rect b = skip.label;
+        return b.centerY() < window.top + window.height() * .32
+                && (b.centerX() > window.left + window.width() * .65
+                || b.centerX() < window.left + window.width() * .25);
+    }
+    boolean canSkip(boolean corners) {
+        return !truncated && !sensitive && skip.ready()
+                && (skip.explicit || corners && cornerSkip() || nearby(skip, adParents));
+    }
+    boolean canShield() { return !truncated && nearby(link, adParents); }
+    boolean canCancel() { return !truncated && explicitQuestion && nearby(cancel, questionParents); }
     public void close() {
         skip.release(); cancel.release(); link.release();
         for (AccessibilityNodeInfo p : adParents) p.recycle();

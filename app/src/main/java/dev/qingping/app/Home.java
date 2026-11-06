@@ -105,10 +105,24 @@ public final class Home extends Activity {
                 book.p.edit().putBoolean("enabled",!book.enabled()).apply(); render();
             });
         }
+        Switch corners = new Switch(this); corners.setText("开屏角落加强识别"); corners.setTextColor(INK);
+        corners.setMinHeight(dp(48)); corners.setChecked(book.cornersOn());
+        corners.setOnCheckedChangeListener((v,on) -> book.p.edit().putBoolean("corners",on).apply()); cfg.addView(corners);
+        cfg.addView(text("支持只写「跳过」的角落按钮。若某个应用的引导页被跳过，可关闭此项。",14,MUTED,false));
         Switch shield = new Switch(this); shield.setText("广告入口防误触"); shield.setTextColor(INK);
         shield.setMinHeight(dp(48)); shield.setChecked(book.touchOn());
         shield.setOnCheckedChangeListener((v,on) -> book.p.edit().putBoolean("shield",on).apply()); cfg.addView(shield);
         cfg.addView(text("识别到开屏广告入口时，用绿色「防误触」挡住按钮。轻点会拦下本次触摸，长按可在这次开屏期间放行。",14,MUTED,false));
+        LinearLayout diagnosis = card(-1);
+        diagnosis.addView(text("运行诊断 · 0.2.0",18,INK,true));
+        diagnosis.addView(text("测试后回到这里查看识别结果。只记录应用和处理状态。",14,MUTED,false));
+        for (String pkg : new TreeSet<>(book.packages())) {
+            if (!book.selected(pkg)) continue;
+            String name = book.p.getString("name/" + pkg,pkg);
+            long seen = book.p.getLong("seen/" + pkg,0);
+            String time = seen == 0 ? "" : " · " + new java.text.SimpleDateFormat("HH:mm:ss",Locale.CHINA).format(new Date(seen));
+            diagnosis.addView(text(name + time + "\n" + book.p.getString("diag/" + pkg,"尚未收到此应用的界面事件"),14,MUTED,false));
+        }
         LinearLayout guide = card(0xffe5eee8);
         guide.addView(text("开机与后台运行",18,INK,true));
         guide.addView(text("首次授权后由系统连接服务。重启并解锁后，可回到这里查看状态。若手机管家频繁清理服务，可在清屏的应用详情中允许自启动和后台运行（选项因机型而异）。强行停止后请重新打开清屏，检查无障碍开关。",14,MUTED,false));
@@ -117,7 +131,7 @@ public final class Home extends Activity {
     }
     private void permission() {
         new AlertDialog.Builder(this).setTitle("允许清屏读取界面并操作广告按钮？")
-                .setMessage("系统无障碍权限范围较广。清屏用窗口变更事件判断前台应用，只在所选应用内读取控件文字、位置和按钮状态。它会点击匹配的跳过或取消按钮，并可在广告入口上方挡住触摸。\n\n统计只在本机保存应用名称、包名和次数。清屏没有联网权限，不保存页面文字、截图或输入内容。你随时可以暂停或在系统设置关闭服务。")
+                .setMessage("系统无障碍权限范围较广。清屏用窗口变更事件判断前台应用，只在所选应用内读取控件文字、位置和按钮状态。它会在应用进入前台的前15秒识别角落的跳过按钮。普通点击失败时，可在该按钮位置模拟轻点；也会取消明确的广告跳转询问，并可在广告入口上方挡住触摸。角落识别可能跳过部分引导页。\n\n统计只在本机保存应用名称、包名和次数。清屏没有联网权限，不保存页面文字、截图或输入内容。你随时可以暂停或在系统设置关闭服务。")
                 .setNegativeButton("暂不开启",null).setPositiveButton("同意，前往设置",(d,w) -> {
                     book.p.edit().putBoolean("consent",true).apply(); startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
                 }).show();

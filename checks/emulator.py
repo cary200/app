@@ -91,7 +91,18 @@ def main():
         shell("input", "tap", x, y)
         until(result, "已进入详情", "long press bypass")
         assert count("touch") == 1, "bypass is not an interception"
-        print("Cross-package fixture checks passed")
+        expected_skip = count("skip")
+        for mode in ("corner", "deep", "touchonly", "ignored", "separator", "enablelater", "late"):
+            launch(mode)
+            until(result, "已进入首页", f"realistic {mode} layout", timeout=14)
+            expected_skip += 1
+            until(lambda: count("skip"), expected_skip, f"{mode} counted once")
+        for mode in ("protected", "ambiguous"):
+            launch(mode)
+            time.sleep(2.5)
+            assert result() == "等待操作", f"must preserve {mode}"
+            assert count("skip") == expected_skip, f"must not count {mode}"
+        print("Cross-package fixture checks passed, including corner/deep/touch-only/ignored/delayed/negative cases")
     finally:
         shell("settings", "delete", "secure", "enabled_accessibility_services")
         if enabled == "null":

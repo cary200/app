@@ -4,10 +4,20 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 final class Rules {
-    static final long START_MS = 8_000;
+    static final long START_MS = 15_000;
     private static final Pattern SPACE = Pattern.compile("[\\s\\p{Z}]+");
+    private static final String WORD = "(?:跳过(?:广告)?|跳過(?:廣告)?|skip(?:ad)?)";
+    private static final String TIME = "[（(]?\\d{1,2}(?:s|秒)?[)）]?";
+    private static final String SEP = "[|｜·:：-]?";
     private static final Pattern SKIP = Pattern.compile(
-            "(?:跳过(?:广告)?|skip(?:ad)?)(?:[（(]?\\d{1,2}(?:s|秒)?[)）]?)?|(?:\\d{1,2}(?:s|秒)?[|｜]?)跳过");
+            "(?:" + WORD + "(?:" + SEP + TIME + ")?|" + TIME + SEP + WORD + ")");
+    static boolean sensitive(String text) {
+        return text.contains("用户协议") || text.contains("隐私政策") || text.contains("新手引导")
+                || text.contains("跳过教程") || text.contains("支付密码") || text.contains("登录验证");
+    }
+    static boolean explicitSkip(String text) {
+        return skip(text) && (text.contains("广告") || text.contains("廣告") || text.startsWith("skipad"));
+    }
     static String norm(CharSequence text) {
         return text == null || text.length() > 96 ? "" : SPACE.matcher(text).replaceAll("").toLowerCase(Locale.ROOT);
     }

@@ -7,7 +7,7 @@ public final class RulesCheck {
         n++;
     }
     public static void main(String[] args) {
-        for (String s : new String[]{"跳过", "跳过 5s", "3秒 | 跳过", "跳过广告（3秒）", "Skip Ad (2s)"})
+        for (String s : new String[]{"跳过", "跳过 5s", "3秒 | 跳过", "跳过广告（3秒）", "Skip Ad (2s)", "5s｜跳过", "跳过｜3秒", "跳過廣告", "SKIP 2S"})
             check(Rules.skip(Rules.norm(s)), s);
         for (String s : new String[]{"跳过支付", "跳过本章", "广告", "返回", "点击跳过验证", "跳过广告并领取", "跳过100s"})
             check(!Rules.skip(Rules.norm(s)), s);
@@ -19,6 +19,8 @@ public final class RulesCheck {
         check(Rules.cancel("取消"),"cancel"); check(!Rules.cancel("确定"),"confirm");
         check(Rules.link("点击查看详情"),"guard link"); check(!Rules.link("支付"),"payment");
         check(Rules.norm(null).isEmpty(),"null");
+        check(Rules.sensitive("新手引导与用户协议"), "protect onboarding");
+        check(!Rules.explicitSkip("跳过教程"), "exact skip only");
         Confirmation attempt = new Confirmation();
         attempt.start("skip", 0);
         check(attempt.observe(80, true, true).isEmpty(), "one observation");

@@ -48,6 +48,14 @@ jobs:
           arch: x86_64
           script: python3 checks/emulator.py
 
+      - name: Verify Android 15 behavior
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          avd-name: qingping35
+          script: python3 checks/emulator.py
+
   publish:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -67,5 +75,5 @@ jobs:
           cp output/app-debug.apk output/QingPing.apk
           gh release create "qingping-test-${GITHUB_RUN_NUMBER}" output/QingPing.apk \
             --target "$GITHUB_SHA" --prerelease \
-            --title "清屏个人测试版 ${GITHUB_RUN_NUMBER}" \
+            --title "清屏 0.2.0 识别修复版 ${GITHUB_RUN_NUMBER}" \
             --notes "下载 QingPing.apk 后在安卓手机上安装。首次使用需要手动开启无障碍服务，并选择要保护的应用。当前为调试签名测试包，不同构建之间可能需要卸载旧版后安装，卸载会删除本机统计。"

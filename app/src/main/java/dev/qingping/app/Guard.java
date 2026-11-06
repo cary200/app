@@ -1,6 +1,8 @@
 package dev.qingping.app;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
+import android.graphics.Path;
 import android.app.KeyguardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -27,7 +29,8 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
     private String source = "";
     private final Confirmation confirmation = new Confirmation();
     private long entered, lastScan;
-    private boolean attemptedSkip, attemptedCancel, bypass;
+    private boolean skipped, attemptedCancel, bypass, gesturePending;
+    private int skipAttempts, session;
     private TextView shield;
     private Rect shieldBox;
     private int shieldWindow;
@@ -39,26 +42,56 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
         book.p.registerOnSharedPreferenceChangeListener(this);
         wm = getSystemService(WindowManager.class);
         connected = true;
+        connectForeground();
     }
     @Override public void onSharedPreferenceChanged(SharedPreferences p, String key) {
-        if (key == null || !key.startsWith("count/") && !key.startsWith("name/")) reset();
+        if (key == null || key.equals("enabled") || key.equals("consent") || key.equals("shield") || key.equals("corners") || key.startsWith("app/")) {
+            reset(); connectForeground();
+        }
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (book == null || event.getPackageName() == null) return;
         String pkg = event.getPackageName().toString();
         if (pkg.equals(getPackageName()) && !Home.class.getName().contentEquals(
                 event.getClassName() == null ? "" : event.getClassName())) return;
-        if (!book.enabled() || !book.selected(pkg)) {
-            if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) reset();
+        if (!book.enabled()) { reset(); return; }
+        if (!book.selected(pkg)) {
+            if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    String activePkg = String.valueOf(root.getPackageName()); root.recycle();
+                    if (!activePkg.equals(source) && !activePkg.equals(getPackageName())) reset();
+                }
+            }
             return;
         }
         if (!source.equals(pkg)) {
-            if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-            reset(); source = pkg; entered = now();
+            // Content events may arrive without an activity transition (warm starts/WebViews).
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) {
+                reset(); source = pkg; entered = now();
+            } else {
+                boolean foreground = pkg.contentEquals(root.getPackageName() == null ? "" : root.getPackageName());
+                root.recycle();
+                if (!foreground) return;
+                reset(); source = pkg; entered = now();
+            }
+            note("已收到界面事件，正在识别");
         }
         // A fixed deadline avoids starvation when an app emits a stream of events.
         if (!scheduled) schedule(Math.max(30, 130 - (now() - lastScan)));
     }
+    private void connectForeground() {
+        if (book == null || !book.enabled()) return;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return;
+        String pkg = String.valueOf(root.getPackageName()); root.recycle();
+        if (!pkg.equals(getPackageName()) && book.selected(pkg)) {
+            source = pkg; entered = now(); note("服务已连接，正在识别"); later();
+        }
+    }
+    private void note(String reason) { if (!source.isEmpty()) book.diagnose(source, reason); }
+    private void pollLaunch() { if (!source.isEmpty() && now() - entered < Rules.START_MS && unlocked()) later(); }
     private long now() { return SystemClock.uptimeMillis(); }
     private boolean unlocked() {
         return getSystemService(PowerManager.class).isInteractive()
@@ -94,13 +127,16 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
         if (root == null) {
             hide();
             confirmation.observe(now(), false, false);
-            if (confirmation.active()) later();
+            note("暂时读不到活动页面，等待加载");
+            if (confirmation.active()) later(); else pollLaunch();
             return;
         }
         try (Scene scene = new Scene(root)) {
-            if (!scene.complete || !scene.populated) {
+            if (gesturePending) { later(); return; }
+            if (scene.truncated || !scene.populated) {
                 hide(); confirmation.observe(now(), false, false);
-                if (confirmation.active()) later();
+                note(scene.truncated ? "页面控件过多，已停止本次识别" : "已收到页面，但没有可读的按钮文字");
+                if (confirmation.active()) later(); else pollLaunch();
                 return;
             }
             if (confirmation.active()) { verify(scene); return; }
@@ -109,15 +145,56 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
             if (!attemptedCancel && scene.marked && scene.canCancel()) {
                 attemptedCancel = true; click(scene.cancel.node, Book.CANCEL); return;
             }
-            boolean splash = now() - entered < Rules.START_MS && scene.marked;
-            if (splash && !attemptedSkip && scene.canSkip()) {
-                attemptedSkip = true; click(scene.skip.node, Book.SKIP); return;
+            boolean splash = now() - entered < Rules.START_MS;
+            if (splash && !skipped && skipAttempts < 2 && scene.canSkip(book.cornersOn())) {
+                skip(scene, root.getWindowId()); return;
             }
-            if (splash && !bypass && book.touchOn() && scene.canShield() && !scene.question) {
+            if (splash && !skipped && skipAttempts == 0) {
+                note(scene.skip.node == null ? "页面可读取，未找到匹配的跳过文字"
+                        : scene.sensitive ? "遇到协议或引导内容，已停止自动点击" : "发现跳过文字，位置或候选不明确");
+            }
+            if (splash && scene.marked && !bypass && book.touchOn() && scene.canShield() && !scene.question) {
                 Rect box = new Rect();
                 scene.link.node.getBoundsInScreen(box);
                 show(box, root.getWindowId()); later();
-            } else hide();
+            } else { hide(); pollLaunch(); }
+        } finally { root.recycle(); }
+    }
+    private void skip(Scene scene, int windowId) {
+        hide();
+        AccessibilityNodeInfo node = scene.skip.node;
+        boolean fallback = skipAttempts > 0;
+        skipAttempts++;
+        if (!node.refresh() || !node.isVisibleToUser() || !node.isEnabled()) { pollLaunch(); return; }
+        if (!fallback && node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            note("已点击跳过，等待确认"); confirmation.start(Book.SKIP, now()); later(); return;
+        }
+        // Re-read the active window and the candidate just before touching the exact label.
+        AccessibilityNodeInfo root = active();
+        if (root == null) { pollLaunch(); return; }
+        try (Scene fresh = new Scene(root)) {
+            if (root.getWindowId() != windowId || !fresh.canSkip(book.cornersOn())
+                    || !fresh.skip.label.equals(scene.skip.label) || now() - entered >= Rules.START_MS
+                    || getMagnificationController().getScale() > 1.01f) { pollLaunch(); return; }
+            Rect bounds = fresh.skip.label;
+            Path path = new Path(); path.moveTo(bounds.exactCenterX(), bounds.exactCenterY());
+            int currentSession = session;
+            gesturePending = true;
+            boolean accepted = dispatchGesture(new GestureDescription.Builder()
+                    .addStroke(new GestureDescription.StrokeDescription(path, 0, 60)).build(),
+                    new GestureResultCallback() {
+                        @Override public void onCompleted(GestureDescription gesture) {
+                            if (session != currentSession) return;
+                            gesturePending = false;
+                            note("已模拟轻点跳过，等待确认"); confirmation.start(Book.SKIP, now()); later();
+                        }
+                        @Override public void onCancelled(GestureDescription gesture) {
+                            if (session != currentSession) return;
+                            gesturePending = false; note("模拟点击被系统取消"); pollLaunch();
+                        }
+                    }, handler);
+            if (!accepted) { gesturePending = false; note("系统未接受模拟点击，请重新开关无障碍"); }
+            later();
         } finally { root.recycle(); }
     }
     private void click(AccessibilityNodeInfo node, String type) {
@@ -129,10 +206,13 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
         later();
     }
     private void verify(Scene scene) {
-        boolean gone = confirmation.isSkip() ? scene.skip.node == null && !scene.marked
+        boolean gone = confirmation.isSkip() ? scene.skip.node == null
                 : !scene.question && scene.cancel.node == null;
-        String kind = confirmation.observe(now(), true, gone);
-        if (!kind.isEmpty()) book.record(source, kind);
+        String kind = confirmation.observe(now(), scene.complete, gone);
+        if (!kind.isEmpty()) {
+            book.record(source, kind);
+            if (kind.equals(Book.SKIP)) { skipped = true; note("已确认跳过成功"); }
+        } else if (!confirmation.active()) note("点击后未确认消失，正在检查是否需要重试");
         later();
     }
     private void later() { schedule(180); }
@@ -188,7 +268,8 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
     }
     private void reset() {
         handler.removeCallbacks(scan); scheduled = false; hide(); source = ""; confirmation.clear();
-        attemptedSkip = false; attemptedCancel = false; bypass = false;
+        skipped = false; skipAttempts = 0; attemptedCancel = false; bypass = false;
+        gesturePending = false; session++;
     }
     @Override public void onInterrupt() { reset(); }
     @Override public boolean onUnbind(Intent i) { disconnect(); return super.onUnbind(i); }

@@ -2,6 +2,9 @@ package dev.qingping.fixture;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.View;
+import android.view.Gravity;
+import android.view.MotionEvent;
 import android.widget.*;
 
 public final class Fixture extends Activity {
@@ -38,8 +41,51 @@ public final class Fixture extends Activity {
             button(option[1],() -> { getPreferences(0).edit().putString("next",option[0]).apply(); finishAndRemoveTask(); });
         }
     }
+    private void corner(String mode) {
+        box.removeAllViews();
+        if (mode.equals("protected")) label("新手引导与用户协议");
+        String caption = mode.equals("separator") ? "5s｜跳过" : "跳过";
+        LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.RIGHT);
+        box.addView(row,new LinearLayout.LayoutParams(-1,dp(48)));
+        TextView label = new TextView(this); label.setText(caption); label.setTextSize(16);
+        label.setGravity(Gravity.CENTER); label.setBackgroundColor(0xffdddddd);
+        if (mode.equals("deep")) {
+            FrameLayout outer = new FrameLayout(this), middle = new FrameLayout(this);
+            outer.setOnClickListener(v -> end("已进入首页"));
+            outer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            middle.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            middle.addView(label,new FrameLayout.LayoutParams(-1,-1));
+            outer.addView(middle,new FrameLayout.LayoutParams(-1,-1));
+            row.addView(outer,new LinearLayout.LayoutParams(dp(96),dp(44)));
+        } else {
+            row.addView(label,new LinearLayout.LayoutParams(dp(96),dp(44)));
+            if (mode.equals("touchonly")) {
+                label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+                label.setOnTouchListener((v,event) -> {
+                    if (event.getAction() == MotionEvent.ACTION_UP) end("已进入首页");
+                    return true;
+                });
+            } else label.setOnClickListener(v -> end("已进入首页"));
+            if (mode.equals("ignored")) label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            if (mode.equals("enablelater")) {
+                label.setEnabled(false); label.postDelayed(() -> label.setEnabled(true),1200);
+            }
+        }
+        if (mode.equals("ambiguous")) button("跳过广告", () -> end("误点了第二候选"));
+        TextView body = new TextView(this); body.setText("活动展示内容"); body.setTextSize(28);
+        box.addView(body,new LinearLayout.LayoutParams(-1,dp(320)));
+    }
     private void show(String mode) {
         status("等待操作"); box.removeAllViews();
+        if (mode.equals("corner") || mode.equals("deep") || mode.equals("touchonly")
+                || mode.equals("ignored") || mode.equals("separator") || mode.equals("protected")
+                || mode.equals("ambiguous") || mode.equals("late") || mode.equals("enablelater")) {
+            if (mode.equals("late")) {
+                label("加载中");
+                box.postDelayed(() -> corner("corner"), 9000);
+            } else corner(mode);
+            return;
+        }
         switch(mode) {
             case "cancel": label("是否打开广告链接？"); button("取消",() -> end("已留在原应用"));
                 button("打开",() -> end("已主动打开")); break;
