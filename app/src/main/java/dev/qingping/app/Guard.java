@@ -60,7 +60,7 @@ public final class Guard extends AccessibilityService implements SharedPreferenc
                 AccessibilityNodeInfo root = getRootInActiveWindow();
                 if (root != null) {
                     String activePkg = String.valueOf(root.getPackageName()); root.recycle();
-                    if (!activePkg.equals(source) && !activePkg.equals(getPackageName())) reset();
+                    if (!activePkg.equals(source)) reset();
                 }
             }
             return;
